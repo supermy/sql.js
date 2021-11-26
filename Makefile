@@ -8,7 +8,7 @@
 # To use another version of Sqlite, visit https://www.sqlite.org/download.html and copy the appropriate values here:
 SQLITE_AMALGAMATION = sqlite-amalgamation-3360000
 SQLITE_AMALGAMATION_ZIP_URL = https://www.sqlite.org/2021/sqlite-amalgamation-3360000.zip
-SQLITE_AMALGAMATION_ZIP_SHA3 = d25609210ec93b3c8c7da66a03cf82e2c9868cfbd2d7d866982861855e96f972
+SQLITE_AMALGAMATION_ZIP_SHA3 = d7a869230999f88afc043affd1e3f04751735d9ae2b55962c71e492a
 
 # Note that extension-functions.c hasn't been updated since 2010-02-06, so likely doesn't need to be updated
 EXTENSION_FUNCTIONS = extension-functions.c
@@ -30,6 +30,10 @@ CFLAGS = \
 # When compiling to WASM, enabling memory-growth is not expected to make much of an impact, so we enable it for all builds
 # Since tihs is a library and not a standalone executable, we don't want to catch unhandled Node process exceptions
 # So, we do : `NODEJS_CATCH_EXIT=0`, which fixes issue: https://github.com/sql-js/sql.js/issues/173 and https://github.com/sql-js/sql.js/issues/262
+# --memory-init-file 1的设置会将静态内存代码初始化的这一部分代码放到.mem后缀的文件中，和.js文件分开。这个.mem文件会在main()函数被调用，代码执行前异步加载。从Emscripten 1.21.1 起，-O2及以上的优化级别默认启动了这项设置。
+# 使用Runtime.addFunction返回一个整数来表示一个函数指针。把这个整数传给C代码，然后C代码调用那个值，则传给Runtime.addFunction的JavaScript函数就被调用。当你用Runtime.addFunction，会有一个数组来存这些函数。这个数组的大小必须被明确指定，这可以通过编译设置项RESERVED_FUNCTION_POINTERS来做。举例,保存20个函数大小。
+# 编译命令里面要用-s EXPORTED_FUNCTIONS参数给出输出的函数名数组，而且函数名前面加下划线。
+# 导出C函数-s EXPORTED_RUNTIME_METHODS='["ccall", "cwrap"]'
 EMFLAGS = \
 	--memory-init-file 0 \
 	-s RESERVED_FUNCTION_POINTERS=64 \
@@ -47,16 +51,27 @@ EMFLAGS_ASM_MEMORY_GROWTH = \
 	-s WASM=0 \
 	-s ALLOW_MEMORY_GROWTH=1
 
+# WASM=1表示输出wasm的文件
+# 在运行时扩大内存容量的模式，在编译时增加-s ALLOW_MEMORY_GROWTH=1
 EMFLAGS_WASM = \
 	-s WASM=1 \
 	-s ALLOW_MEMORY_GROWTH=1
 
+# 运行压缩编译器（Closure Compiler），可能的取值有，0,1,2：
+# 启用llvm优化。它的取值有有：
+# 0：不使用llvm优化
+# 1：llvm -O1优化
+# 2：llvm -O2优化
+# 3：llvm -O3优化
+# 不允许嵌入/内联代码：-s INLINING_LIMIT=1。
+# 启用链接时间优化（LTO）。
 EMFLAGS_OPTIMIZED= \
 	-s INLINING_LIMIT=50 \
 	-O3 \
 	-flto \
 	--closure 1
 
+# ASSERTIONS=1 用于为内存分配错误启用运行时检查
 EMFLAGS_DEBUG = \
 	-s INLINING_LIMIT=10 \
 	-s ASSERTIONS=1 \
@@ -75,6 +90,7 @@ EXPORTED_METHODS_JSON_FILES = src/exported_functions.json src/exported_runtime_m
 
 all: optimized debug worker
 
+# .PHONY后面的target表示的也是一个伪造的target, 而不是真实存在的文件target，注意Makefile的target默认是文件。
 .PHONY: debug
 debug: dist/sql-asm-debug.js dist/sql-wasm-debug.js
 
